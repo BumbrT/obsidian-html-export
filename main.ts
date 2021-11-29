@@ -10,7 +10,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
-import { Notice, Plugin, FileSystemAdapter, MarkdownView } from 'obsidian';
+import { Notice, Plugin, FileSystemAdapter, MarkdownView, TFile } from 'obsidian';
 import { lookpath } from 'lookpath';
 import { pandoc, inputExtensions, outputFormats, OutputFormat, needsLaTeX, needsPandoc } from './pandoc';
 import * as YAML from 'yaml';
@@ -52,6 +52,36 @@ export default class PandocPlugin extends Plugin {
                 }
             });
         }
+
+        // register Export all command
+        this.addCommand({
+            id: 'pandoc-exportall', name: 'Export all as html',
+            checkCallback: (checking: boolean) => {
+                if (!this.app.workspace.activeLeaf) return false;
+                const files = this.app.vault.getMarkdownFiles();
+                if (!checking) {
+                    const exportJobs: (() => Promise<any>)[] = []
+                    for (const file of files) {
+                        const adapter = this.app.vault.adapter as FileSystemAdapter;
+                        const fullPath = adapter.getFullPath(file.path);
+                        const job = async () => {
+                            await this.startHtmlExport(file, fullPath, 'html');
+                        }
+                        exportJobs.push(job)
+                        console.log(`added job to export ${fullPath}`)
+                    }
+                    console.log(`total number of jobs: ${exportJobs.length}`)
+                    const executeJobs = async () => {
+                        for (const job of exportJobs) {
+                            await job()
+                        }
+                    }
+                    executeJobs()
+                }
+
+                return true;
+            }
+        });
     }
 
     vaultBasePath(): string {
@@ -85,6 +115,39 @@ export default class PandocPlugin extends Plugin {
         this.features['pdflatex'] = this.settings.pdflatex || await lookpath('pdflatex');
     }
 
+    async startHtmlExport(file: TFile, inputFile: string, shortName: string) {
+        new Notice(`Exporting ${inputFile} to ${shortName}`);
+        console.log('exporting: ' + inputFile)
+        // Instead of using Pandoc to process the raw Markdown, we use Obsidian's
+        // internal markdown renderer, and process the HTML it generates instead.
+        // This allows us to more easily deal with Obsidian specific Markdown syntax.
+        // However, we provide an option to use MD instead to use citations
+        const extension = 'html';
+        const format = 'html';
+        let outputFile: string = replaceFileExtension(inputFile, extension);
+        if (this.settings.outputFolder) {
+            outputFile = path.join(this.settings.outputFolder, path.basename(outputFile));
+        }
+        await this.app.workspace.activeLeaf.openFile(file);
+        // TODO - use renderMarkdown function
+        // await new Promise(f => setTimeout(f, 1000));
+        const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+
+        try {
+
+            const { html, metadata } = await render(this, view, inputFile, format);
+
+            // Write to HTML file
+            await fs.promises.writeFile(outputFile, html);
+            console.log('Successfully exported: ' + inputFile)
+            new Notice('Successfully exported via Pandoc to ' + outputFile);
+
+        } catch (e) {
+            new Notice('Pandoc export failed: ' + e.toString(), 15000);
+            console.error(e);
+        }
+    }
+
     async startPandocExport(inputFile: string, format: OutputFormat, extension: string, shortName: string) {
         new Notice(`Exporting ${inputFile} to ${shortName}`);
 
@@ -98,7 +161,7 @@ export default class PandocPlugin extends Plugin {
             outputFile = path.join(this.settings.outputFolder, path.basename(outputFile));
         }
         const view = this.app.workspace.getActiveViewOfType(MarkdownView);
-        
+
         try {
             let error, command;
 
