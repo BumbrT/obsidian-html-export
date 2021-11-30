@@ -204,7 +204,8 @@ async function postProcessRenderedHTML(plugin: PandocPlugin, inputFile: string, 
             let href = path.join(dirname, a.href.substring(prefix.length));
             if (settings.addExtensionsToInternalLinks.length && a.href.startsWith(prefix)) {
                 if (path.extname(href) === '') {
-                    const dir = path.dirname(href);
+                    // const dir = path.dirname(href);
+                    const dir = '';
                     const base = path.basename(href);
                     // Be careful to turn [[note#heading]] into note.extension#heading not note#heading.extension
                     const hashIndex = base.indexOf('#');
