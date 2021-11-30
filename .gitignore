@@ -9,3 +9,9 @@ package-lock.json
 data.json
 
 main.js
+global.js
+pandoc.js
+renderer.js
+settings.js
+styles/app-css.js
+styles/mathjax-css.js
