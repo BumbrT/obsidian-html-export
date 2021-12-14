@@ -37,25 +37,9 @@ export default class PandocPlugin extends Plugin {
     }
 
     registerCommands() {
-        for (let [prettyName, pandocFormat, extension, shortName] of outputFormats) {
-
-            const name = 'Export as ' + prettyName;
-            this.addCommand({
-                id: 'pandoc-export-' + pandocFormat, name,
-                checkCallback: (checking: boolean) => {
-                    if (!this.app.workspace.activeLeaf) return false;
-                    if (!this.currentFileCanBeExported(pandocFormat as OutputFormat)) return false;
-                    if (!checking) {
-                        this.startPandocExport(this.getCurrentFile(), pandocFormat as OutputFormat, extension, shortName);
-                    }
-                    return true;
-                }
-            });
-        }
-
         // register Export all command
         this.addCommand({
-            id: 'pandoc-exportall', name: 'Export all as html',
+            id: 'html-exportall', name: 'Export all as html',
             checkCallback: (checking: boolean) => {
                 if (!this.app.workspace.activeLeaf) return false;
                 const files = this.app.vault.getMarkdownFiles();
@@ -124,9 +108,12 @@ export default class PandocPlugin extends Plugin {
         // However, we provide an option to use MD instead to use citations
         const extension = 'html';
         const format = 'html';
+        const htmlContentFolder = "html"
         let outputFile: string = replaceFileExtension(inputFile, extension);
         if (this.settings.outputFolder) {
-            outputFile = path.join(this.settings.outputFolder, path.basename(outputFile));
+            outputFile = path.join(`${this.settings.outputFolder}\\${htmlContentFolder}`, path.basename(outputFile));
+        } else {
+            outputFile = path.join(`${htmlContentFolder}`, path.basename(outputFile));
         }
         await this.app.workspace.activeLeaf.openFile(file);
         // TODO - use renderMarkdown function
@@ -141,82 +128,6 @@ export default class PandocPlugin extends Plugin {
             await fs.promises.writeFile(outputFile, html);
             console.log('Successfully exported: ' + inputFile)
             new Notice('Successfully exported via Pandoc to ' + outputFile);
-
-        } catch (e) {
-            new Notice('Pandoc export failed: ' + e.toString(), 15000);
-            console.error(e);
-        }
-    }
-
-    async startPandocExport(inputFile: string, format: OutputFormat, extension: string, shortName: string) {
-        new Notice(`Exporting ${inputFile} to ${shortName}`);
-
-        // Instead of using Pandoc to process the raw Markdown, we use Obsidian's
-        // internal markdown renderer, and process the HTML it generates instead.
-        // This allows us to more easily deal with Obsidian specific Markdown syntax.
-        // However, we provide an option to use MD instead to use citations
-
-        let outputFile: string = replaceFileExtension(inputFile, extension);
-        if (this.settings.outputFolder) {
-            outputFile = path.join(this.settings.outputFolder, path.basename(outputFile));
-        }
-        const view = this.app.workspace.getActiveViewOfType(MarkdownView);
-
-        try {
-            let error, command;
-
-            switch (this.settings.exportFrom) {
-                case 'html': {
-                    const { html, metadata } = await render(this, view, inputFile, format);
-
-                    if (format === 'html') {
-                        // Write to HTML file
-                        await fs.promises.writeFile(outputFile, html);
-                        new Notice('Successfully exported via Pandoc to ' + outputFile);
-                        return;
-                    } else {
-                        // Spawn Pandoc
-                        const metadataFile = temp.path();
-                        const metadataString = YAML.stringify(metadata);
-                        await fs.promises.writeFile(metadataFile, metadataString);
-                        const result = await pandoc(
-                            {
-                                file: 'STDIN', contents: html, format: 'html', metadataFile,
-                                pandoc: this.settings.pandoc, pdflatex: this.settings.pdflatex
-                            },
-                            { file: outputFile, format },
-                            this.settings.extraArguments.split('\n')
-                        );
-                        error = result.error;
-                        command = result.command;
-                    }
-                    break;
-                }
-                case 'md': {
-                    const result = await pandoc(
-                        {
-                            file: inputFile, format: 'markdown',
-                            pandoc: this.settings.pandoc, pdflatex: this.settings.pdflatex
-                        },
-                        { file: outputFile, format },
-                        this.settings.extraArguments.split('\n')
-                    );
-                    error = result.error;
-                    command = result.command;
-                    break;
-                }
-            }
-
-            if (error.length) {
-                new Notice('Exported via Pandoc to ' + outputFile + ' with warnings');
-                new Notice('Pandoc warnings:' + error, 10000);
-            } else {
-                new Notice('Successfully exported via Pandoc to ' + outputFile);
-            }
-            if (this.settings.showCLICommands) {
-                new Notice('Pandoc command: ' + command, 10000);
-                console.log(command);
-            }
 
         } catch (e) {
             new Notice('Pandoc export failed: ' + e.toString(), 15000);
