@@ -1,3 +1,10 @@
+# Usefull plugins
+https://github.com/pjeby/hot-reload
+
+# build WA:
+error: (!) Circular dependencies
+node_modules\glob\glob.js -> node_modules\glob\sync.js -> node_modules\glob\glob.js
+remove from sync.js folloving line: var Glob = require('./glob.js').Glob
 
 ### Releasing new releases
 
