@@ -17,11 +17,10 @@ import PandocPlugin from './main';
 import { PandocPluginSettings } from './global';
 import mathJaxFontCSS from './styles/mathjax-css';
 import appCSS, { variables as appCSSVariables } from './styles/app-css';
-import { outputFormats } from 'pandoc';
 
 // Note: parentFiles is for internal use (to prevent recursively embedded notes)
 // inputFile must be an absolute file path
-export default async function render (plugin: PandocPlugin, view: MarkdownView,
+export async function render (plugin: PandocPlugin, view: MarkdownView,
     inputFile: string, outputFormat: string, parentFiles: string[] = []):
     Promise<{ html: string, metadata: { [index: string]: string } }>
 {
@@ -48,6 +47,38 @@ export default async function render (plugin: PandocPlugin, view: MarkdownView,
     return { html, metadata };
 }
 
+export async function renderDiv (plugin: PandocPlugin, view: MarkdownView,
+    inputFile: string, outputFormat: string, parentFiles: string[] = []):
+    Promise<{ html: string, metadata: { [index: string]: string } }>
+{
+    // Use Obsidian's markdown renderer to render to a hidden <div>
+    const markdown = view.data;
+    const wrapper = document.createElement('div');
+    wrapper.style.display = 'hidden';
+    document.body.appendChild(wrapper);
+    await MarkdownRenderer.renderMarkdown(markdown, wrapper, path.dirname(inputFile), view);
+
+    // Post-process the HTML in-place
+    // await postProcessRenderedHTML(plugin, inputFile, wrapper, outputFormat,
+    //     parentFiles, await mermaidCSS(plugin.settings, plugin.vaultBasePath()));
+    let html = wrapper.innerHTML;
+    document.body.removeChild(wrapper);
+
+    // If it's a top level note, make the HTML a standalone document - inject CSS, a <title>, etc.
+    const metadata = getYAMLMetadata(markdown);
+    metadata.title ??= fileBaseName(inputFile);
+    if (parentFiles.length === 0) {
+        html = await divElement(plugin.settings, html, metadata.title, plugin.vaultBasePath());
+    }
+
+    return { html, metadata };
+}
+
+const _ = {
+    render,
+    renderDiv
+}
+export default _;
 // Takes any file path like '/home/oliver/zettelkasten/Obsidian.md' and
 // takes the base name, in this case 'Obsidian'
 function fileBaseName(file: string): string {
@@ -135,8 +166,11 @@ async function getDesiredCSS(settings: PandocPluginSettings, html: string, vault
     //  already embedded so doesn't duplicate CSS)
     if (html.indexOf('jax="CHTML"') !== -1)
         css += ' ' + mathJaxFontCSS;
+    const customCss = await getCustomCSS(settings, vaultBasePath);
     // Inject custom local CSS file if it exists
-    css += await getCustomCSS(settings, vaultBasePath);
+    if (customCss != null) {
+        css += customCss;
+    }
     return css;
 }
 
@@ -156,6 +190,12 @@ async function standaloneHTML(settings: PandocPluginSettings, html: string, titl
         `${html}\n` +
         `    </body>\n` +
         `</html>`;
+}
+
+async function divElement(settings: PandocPluginSettings, html: string, title: string, vaultBasePath: string): Promise<string> {
+    return `<div>\n` +
+        `${html}\n` +
+        `</div>\n`;
 }
 
 async function postProcessRenderedHTML(plugin: PandocPlugin, inputFile: string, wrapper: HTMLElement,
